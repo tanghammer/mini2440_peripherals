@@ -1,0 +1,2 @@
+# mini2440_peripherals
+基于mini2440的外设裸机代码，NorFlash启动
