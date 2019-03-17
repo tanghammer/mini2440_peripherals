@@ -1,0 +1,23 @@
+#初始化 S3C2440 CPU.
+    
+#定义一个函数(功能块)
+define reset_s3c2440
+	##设置小端模式，要和你跑的裸机程序一致.
+	monitor endian little
+	
+	##copied from JLinkGDBServer Document.
+	monitor reset 					#复位 S3C2440
+	monitor reg cpsr = 0xd3			#设置 cpsr 寄存器.
+	monitor speed auto				#Link Speed.
+
+end
+
+##main function defined for connect to the TARGET.
+##arg0 = IP地址.
+##arg1 = JLinkGDBServer端口号.
+define connect_s3c2440
+	if $argc == 2
+	target remote $arg0:$arg1
+	reset_s3c2440
+	end
+end
