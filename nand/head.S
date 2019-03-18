@@ -10,7 +10,6 @@
 .global _start
 _start:
 	b 		reset
-	ldr 	pc, _undefined_instruction
 	
 reset:
     bl  	disable_watch_dog               @ 关闭WATCHDOG，否则CPU会不断重启
@@ -20,12 +19,6 @@ reset:
     bl  	main
 halt_loop:
     b   	halt_loop
-
-_undefined_instruction:	.word undefined_instruction
-
-	.align  5
-undefined_instruction:
-	bl 		undefined_instruction
 	
 disable_watch_dog:
 	@ 往WATCHDOG寄存器写0即可
@@ -70,7 +63,7 @@ copy_norflash_to_sdram:
     @ Nor启动, norflas起始地址0x00000000，SDRAM中起始地址0x30000000
     mov r1, #0
     ldr r2, =SDRAM_BASE
-    mov r3, #4*1024*1024
+    mov r3, #2*1024*1024
 1:
     ldr r4, [r1],#4     @ 从Steppingstone读取4字节的数据，并让源地址势
     str r4, [r2],#4     @ 将此4字节的数据复制到SDRAM中，并让目地地址势
