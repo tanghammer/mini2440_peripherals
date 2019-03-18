@@ -6,7 +6,7 @@ define reset_s3c2440
 	monitor endian little
 	
 	##copied from JLinkGDBServer Document.
-	monitor reset 					#复位 S3C2440
+	monitor reset 1 1			#复位 S3C2440,see UM08001_JLink.pdf 5.8.1 Strategies for ARM 7/9 devices
 	monitor reg cpsr = 0xd3			#设置 cpsr 寄存器.
 	monitor speed auto				#Link Speed.
 
