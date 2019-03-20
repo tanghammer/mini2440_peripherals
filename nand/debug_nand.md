@@ -1,4 +1,4 @@
-#s3c2440调试nandflash裸机程序遇到的问题
+# s3c2440调试nandflash裸机程序遇到的问题
 
 按照前面sdram的代码，启动代码里面关看门狗、初始化存储控制器（主要是BANK0的Norflash和BANK6的SDRAM）、设置栈到SDRAM的最高地址，text段的数据直接从Norflash里面取。
 ![](https://i.imgur.com/7EWkcnq.png)
