@@ -6,16 +6,26 @@
 
 #define NAND_SECTOR_SIZE_LP    2048
 #define NAND_BLOCK_MASK_LP     (NAND_SECTOR_SIZE_LP - 1)
-
+#define NAND_OOB_SIZE_LP       64
 
 /*NANDFLASH控制器基址*/
 #define S3C24X0NAND_BASE    (0x4E000000)
 
-/*通用状态寄存器*/
-#define GSTATUS0_BASE       (0x560000AC)
-#define GSTATUS1_BASE       (0x560000B0)
 
-typedef unsigned int S3C24X0_REG32;
+/*命令*/
+#define CMD_READ1                0x00               //页读命令周期1
+#define CMD_READ2                0x30               //页读命令周期2
+#define CMD_READID               0x90               //读ID命令
+#define CMD_WRITE1               0x80               //页写命令周期1
+#define CMD_WRITE2               0x10               //页写命令周期2
+#define CMD_ERASE1               0x60               //块擦除命令周期1
+#define CMD_ERASE2               0xD0               //块擦除命令周期2
+#define CMD_STATUS               0x70               //读状态命令
+#define CMD_RESET                0xFF               //复位
+#define CMD_RANDOMREAD1          0x05               //随意读命令周期1
+#define CMD_RANDOMREAD2          0xE0               //随意读命令周期2
+#define CMD_RANDOMWRITE          0x85               //随意写命令
+
 
 /*NAND flash configuration regiser*/
 typedef struct nfconf_reg
@@ -232,38 +242,26 @@ typedef struct {
     nfsnblk_reg_ts  NFEBLK;
 } S3C2440_NAND;
 
-/*NAND Flash操作接口*/
-typedef struct {
-    void (*nand_reset)(void);
-    void (*wait_ready)(void);
-    void (*nand_select_chip)(void);
-    void (*nand_deselect_chip)(void);
-    void (*write_cmd)(int cmd);
-    void (*write_addr)(unsigned int addr);
-    unsigned char (*read_data)(void);
-}t_nand_chip;
-
-
 static volatile S3C2440_NAND* s3c2440nand = (S3C2440_NAND *)(S3C24X0NAND_BASE);
-static t_nand_chip nand_chip;
 
 /* NAND Flash操作的总入口, 它们将调用S3C2440的相应函数 */
-static void nand_reset(void);
-static void wait_ready(void);
-static void nand_select_chip(void);
-static void nand_deselect_chip(void);
-static void write_cmd(int cmd);
-static void write_addr(unsigned int addr);
-static unsigned char read_data(void);
+
 
 /* S3C2440的NAND Flash处理函数 */
 static void s3c2440_nand_reset(void);
 static void s3c2440_wait_ready(void);
+static void s3c2440_clear_ready(void);
 static void s3c2440_nand_select_chip(void);
 static void s3c2440_nand_deselect_chip(void);
-static void s3c2440_write_cmd(int cmd);
+static void s3c2440_write_cmd(unsigned char cmd);
+static void s3c2440_write_addr_byte(unsigned char addr);
 static void s3c2440_write_addr(unsigned int addr);
-static unsigned char s3c2440_read_data(void);
+static unsigned char s3c2440_read_data8(void);
+static unsigned short s3c2440_read_data16(void);
+static unsigned int s3c2440_read_data32(void);
+static void s3c2440_write_data8(unsigned char data);
+static void s3c2440_write_data16(unsigned short data);
+static void s3c2440_write_data32(unsigned int data);
 
 
 /* S3C2440的NAND Flash操作函数 */
@@ -278,12 +276,12 @@ RnB  ___________              ____________
 */
 static void s3c2440_nand_reset(void)
 {
-    s3c2440_nand_select_chip();
-    s3c2440_write_cmd(0xFF);            // 复位命令
-    s3c2440_wait_ready();
-    s3c2440_nand_deselect_chip();
+    s3c2440_nand_select_chip();         //片选
+    s3c2440_clear_ready();              //清空RnB
+    s3c2440_write_cmd(CMD_RESET);       //复位命令
+    s3c2440_wait_ready();               //等待ready
+    s3c2440_nand_deselect_chip();       //关片选
 }
-
 
 //==============================================================================
 /* 等待NAND Flash就绪 */
@@ -296,6 +294,12 @@ static void s3c2440_wait_ready(void)
     {
         for(i=0; i<10; i++);
     }    
+}
+
+/* 清空RnB忙信号*/
+static void s3c2440_clear_ready(void)
+{
+    s3c2440nand->NFSTAT.RnB = 1;    
 }
 
 /* 发出片选信号 */
@@ -318,9 +322,14 @@ static void s3c2440_nand_deselect_chip(void)
 }
 
 /* 发出命令 */
-static void s3c2440_write_cmd(int cmd)
+static void s3c2440_write_cmd(unsigned char cmd)
 {
     s3c2440nand->NFCMD.NFcmmd = cmd;
+}
+
+static void s3c2440_write_addr_byte(unsigned char addr)
+{
+    s3c2440nand->NFADDR.NFaddr = addr;
 }
 
 /* 发出地址 */
@@ -368,149 +377,397 @@ static void s3c2440_write_addr_lp(unsigned int addr)
 
 
 /* 读取数据 */
-static unsigned char s3c2440_read_data(void)
+static unsigned char s3c2440_read_data8(void)
+{
+    return s3c2440nand->NFDATA.NFdata & 0x000000FF;
+}
+
+static unsigned short s3c2440_read_data16(void)
+{
+    return s3c2440nand->NFDATA.NFdata & 0x0000FFFF;
+}
+
+static unsigned int s3c2440_read_data32(void)
 {
     return s3c2440nand->NFDATA.NFdata;
 }
 
-/* 在第一次使用NAND Flash前，复位一下NAND Flash */
-static void nand_reset(void)
+/* 写入数据 */
+static void s3c2440_write_data8(unsigned char data)
 {
-    nand_chip.nand_reset();
+    s3c2440nand->NFDATA.NFdata = 0xFFFFFF00 | data;
 }
 
-static void wait_ready(void)
+/* 写入数据 */
+static void s3c2440_write_data16(unsigned short data)
 {
-    nand_chip.wait_ready();
+    s3c2440nand->NFDATA.NFdata = 0xFFFF0000 | data;
 }
 
-static void nand_select_chip(void)
+/* 写入数据 */
+static void s3c2440_write_data32(unsigned int data)
 {
-    int i;
-    
-    nand_chip.nand_select_chip();
-    
-    for(i=0; i<10; i++)
-    {
-    }
+    s3c2440nand->NFDATA.NFdata = data;
 }
 
-static void nand_deselect_chip(void)
-{
-    nand_chip.nand_deselect_chip();
-}
-
-static void write_cmd(int cmd)
-{
-    nand_chip.write_cmd(cmd);
-}
-static void write_addr(unsigned int addr)
-{
-    nand_chip.write_addr(addr);
-}
-
-static unsigned char read_data(void)
-{
-    return nand_chip.read_data();
-}
 
 /* 初始化NAND Flash */
 void nand_init(void)
 {
 #define TACLS   0
-#define TWRPH0  3
-#define TWRPH1  0
-
-    nand_chip.nand_reset         = s3c2440_nand_reset;
-    nand_chip.wait_ready         = s3c2440_wait_ready;
-    nand_chip.nand_select_chip   = s3c2440_nand_select_chip;
-    nand_chip.nand_deselect_chip = s3c2440_nand_deselect_chip;
-    nand_chip.write_cmd          = s3c2440_write_cmd;
-#ifdef LARGER_NAND_PAGE
-    nand_chip.write_addr         = s3c2440_write_addr_lp;
-#else
-    nand_chip.write_addr		 = s3c2440_write_addr;
-#endif
-    nand_chip.read_data          = s3c2440_read_data;
+#define TWRPH0  4
+#define TWRPH1  2
 
     /* 设置时序 */
     s3c2440nand->NFCONF.TaclsDuration = TACLS;
     s3c2440nand->NFCONF.Twrph0 = TWRPH0;
     s3c2440nand->NFCONF.Twrph1 = TWRPH1;
     
-    /* 使能NAND Flash控制器, 初始化ECC, 禁止片选 */
-    //s3c2440nand->NFCONT = (1<<4)|(1<<1)|(1<<0);
+    /*非锁定，屏蔽nandflash中断，初始化ECC及锁定main区和spare区ECC，使能nandflash片选及控制器 */
+    s3c2440nand->NFCONT.LockTight = 0;
+    s3c2440nand->NFCONT.SoftLock = 0;
+    s3c2440nand->NFCONT.EnblllegalAccINT = 0;
+    s3c2440nand->NFCONT.EnbRnBINT = 0;
+    s3c2440nand->NFCONT.RnB_TransMode = 0;
+    s3c2440nand->NFCONT.SpareEccLock = 1;
+    s3c2440nand->NFCONT.MainEccLock = 1;
     s3c2440nand->NFCONT.InitEcc = 1;    //Initialize ECC decoder/encoder 
     s3c2440nand->NFCONT.Reg_nCE = 1;    //Force nFCE to high (Disable chip select) 
     s3c2440nand->NFCONT.Mode = 1;       //NAND flash controller enable
     
     /* 复位NAND Flash */
-    nand_reset();
+    s3c2440_nand_reset();
 }
 
-/* 读函数 */
-void nand_read(unsigned char *buf, unsigned long start_addr, int size)
+unsigned char nand_readid(void)
 {
-    int i, j;
+    int i;
+    unsigned char pMID;
+    unsigned char pDID;
+    unsigned char cyc3, cyc4, cyc5;
+    unsigned int dat;
 
-#ifdef LARGER_NAND_PAGE
-    if ((start_addr & NAND_BLOCK_MASK_LP) || (size & NAND_BLOCK_MASK_LP)) 
+    s3c2440_nand_select_chip();         //打开nandflash片选
+    s3c2440_clear_ready();              //清RnB信号
+    s3c2440_write_cmd(CMD_READID);      //读ID命令
+    s3c2440_write_addr_byte(0x0);       //写0x00地址
+    s3c2440_wait_ready();               //等待就绪
+
+    //读五个周期的ID
+    dat = s3c2440_read_data32();        //厂商ID：0xEC
+    cyc4 = (dat>>24) & 0xFF;
+    cyc3 = (dat>>16) & 0xFF;
+    pDID = (dat>>8) & 0xFF;
+    pMID= dat & 0xFF;
+    cyc5 = s3c2440_read_data8();        //0x44
+    s3c2440_nand_deselect_chip();       //关闭nandflash片选
+
+    return (pDID);
+
+}
+
+void nand_readpage(unsigned int page)
+{
+    unsigned int i, mecc0, secc;
+    unsigned char buf[NAND_SECTOR_SIZE_LP + NAND_OOB_SIZE_LP];
+    //NF_RSTECC();                //复位ECC
+    //NF_MECC_UnLock();           //解锁main区ECC
+
+    s3c2440_nand_select_chip();             //使能芯片 
+    s3c2440_clear_ready();                  //清除RnB
+    s3c2440_write_cmd(CMD_READ1);           //页读命令周期1，0x00
+
+    //写入5个地址周期
+    s3c2440_write_addr_byte(0x00);                   //列地址A0-A7
+    s3c2440_write_addr_byte(0x00);                   //列地址A8-A11
+    s3c2440_write_addr_byte((page) & 0xFF);          //行地址A12-A19
+    s3c2440_write_addr_byte((page >> 8) & 0xFF);     //行地址A20-A27
+    s3c2440_write_addr_byte((page >> 16) & 0xFF);    //行地址A28
+ 
+    s3c2440_write_cmd(CMD_READ2);               //页读命令周期2，0x30
+    s3c2440_wait_ready();                       //等待RnB信号变高，即不忙
+
+    for (i = 0; i < NAND_SECTOR_SIZE_LP + NAND_OOB_SIZE_LP; i=i+4)
     {
-        return ;    /* 地址或长度不对齐 */
+        *((unsigned int *)(buf+i)) = s3c2440_read_data32();
     }
-#else
-    if ((start_addr & NAND_BLOCK_MASK) || (size & NAND_BLOCK_MASK)) 
+
+#if 0
+    //NF_MECC_Lock();          //锁定main区ECC值
+    //NF_SECC_UnLock();        //解锁spare区ECC
+
+    //mecc0=NF_RDDATA();   //读spare区的前4个地址内容，即第2048~2051地址，这4个字节为main区的ECC
+
+    //把读取到的main区的ECC校验码放入NFMECCD0/1的相应位置内
+    //rNFMECCD0=((mecc0&0xff00)<<8)|(mecc0&0xff);
+    //rNFMECCD1=((mecc0&0xff000000)>>8)|((mecc0&0xff0000)>>16);
+                
+    //NF_SECC_Lock();       //锁定spare区的ECC值
+    //secc=NF_RDDATA();   //继续读spare区的4个地址内容，即第2052~2055地址，其中前2个字节为spare区的ECC值
+    
+    //rNFSECCD=((secc&0xff00)<<8)|(secc&0xff);//把读取到的spare区的ECC校验码放入NFSECCD的相应位置内
+#endif
+    s3c2440_nand_deselect_chip();   //关闭nandflash片选
+
+#if 0
+    //判断所读取到的数据是否正确
+    if ((rNFESTAT0&0xf) == 0x0)
     {
-        return ;    /* 地址或长度不对齐 */
+        return 0x66;                  //正确
     }
-#endif	
-
-    /* 选中芯片 */
-    nand_select_chip();
-
-    for(i=start_addr; i < (start_addr + size);) 
+    else
     {
-        /* 发出READ0命令 */
-        write_cmd(0);
-
-        /* Write Address */
-        write_addr(i);
-#ifdef LARGER_NAND_PAGE
-        write_cmd(0x30);		
+        return 0x44;                  //错误
+    }
 #endif
-        wait_ready();
+}
 
-#ifdef LARGER_NAND_PAGE
-        for(j=0; j < NAND_SECTOR_SIZE_LP; j++, i++) 
-        {
-#else
-        for(j=0; j < NAND_SECTOR_SIZE; j++, i++) 
-        {
+void nand_writepage(unsigned int  page_number)
+{
+    unsigned int i, mecc0, secc;
+    unsigned char stat, temp;
+
+#if 0
+    temp = rNF_IsBadBlock(page_number>>6);     //判断该块是否为坏块
+    if(temp == 0x33)
+    {
+        return 0x42;       //是坏块，返回
+    }
 #endif
-            *buf = read_data();
-            buf++;
+
+#if 0
+    NF_RSTECC();          //复位ECC
+    NF_MECC_UnLock();     //解锁main区的ECC
+#endif
+
+    s3c2440_nand_select_chip();          //打开nandflash片选
+    s3c2440_clear_ready();        //清RnB信号
+
+    s3c2440_write_cmd(CMD_WRITE1);           //页写命令周期1
+
+    //写入5个地址周期
+    s3c2440_write_addr_byte(0x00);           //列地址A0~A7
+    s3c2440_write_addr_byte(0x00);           //列地址A8~A11
+    s3c2440_write_addr_byte((page_number) & 0xff);         //行地址A12~A19
+    s3c2440_write_addr_byte((page_number >> 8) & 0xff);    //行地址A20~A27
+    s3c2440_write_addr_byte((page_number >> 16) & 0xff);  //行地址A28
+
+    for (i = 0; i < NAND_SECTOR_SIZE_LP + NAND_OOB_SIZE_LP; i++)//写入一页数据
+    {
+        s3c2440_write_data32(0xDDDDDDDD);
+    }
+
+#if 0
+    NF_MECC_Lock();    //锁定main区的ECC值
+    mecc0=rNFMECC0;    //读取main区的ECC校验码
+
+    //把ECC校验码由字型转换为字节型，并保存到全局变量数组ECCBuf中
+    ECCBuf[0]=(U8)(mecc0&0xff);
+    ECCBuf[1]=(U8)((mecc0>>8) & 0xff);
+    ECCBuf[2]=(U8)((mecc0>>16) & 0xff);
+    ECCBuf[3]=(U8)((mecc0>>24) & 0xff);
+    NF_SECC_UnLock();                  //解锁spare区的ECC
+
+    //把main区的ECC值写入到spare区的前4个字节地址内，即第2048~2051地址
+    for(i=0;i<4;i++)
+    {
+        s3c2440_write_data8(ECCBuf[i]);
+    }
+
+    NF_SECC_Lock();                      //锁定spare区的ECC值
+    secc=rNFSECC;                   //读取spare区的ECC校验码
+
+    //把ECC校验码保存到全局变量数组ECCBuf中
+    ECCBuf[4]=(U8)(secc&0xff);
+    ECCBuf[5]=(U8)((secc>>8) & 0xff);
+
+    //把spare区的ECC值继续写入到spare区的第2052~2053地址内
+    for(i=4;i<6;i++)
+    {
+        NF_WRDATA8(ECCBuf[i]);
+    }
+#endif
+
+    s3c2440_write_cmd(CMD_WRITE2);  //页写命令周期2
+    
+    s3c2440_wait_ready();
+    
+    s3c2440_write_cmd(CMD_STATUS);          //读状态命令
+    //判断状态值的第6位是否为1，即是否在忙，该语句的作用与NF_DETECT_RB();相同
+    do
+    {
+        stat = s3c2440_read_data8();
+    }while(!(stat&0x40));
+
+    s3c2440_nand_deselect_chip();                    //关闭Nand Flash片选
+
+    //判断状态值的第0位是否为0，为0则写操作正确，否则错误
+    if (stat & 0x1)
+    {
+#if 0
+        temp = rNF_MarkBadBlock(page_number>>6);//标注该页所在的块为坏块
+        if (temp == 0x21)
+        {
+            return 0x43            //标注坏块失败
+        }
+        else
+#endif
+        {
+            temp = 2;
+            //return 0x44;           //写操作失败
         }
     }
+    else
+    {
+        temp = 0;
+        //return 0x66;                  //写操作成功
+    }
+}
+
+void nand_eraseblock(unsigned int block_number)
+{
+    char stat, temp;
+
+#if 0
+    temp = rNF_IsBadBlock(block_number);     //判断该块是否为坏块
+    if(temp == 0x33)
+    {
+        return 0x42;           //是坏块，返回
+    }
+#endif
+
+    s3c2440_nand_select_chip();       //打开nandflash片选
+    s3c2440_clear_ready();            //清RnB信号
+
+    s3c2440_write_cmd(CMD_ERASE1);    //擦除命令周期1
+
+    //写入3个地址周期，从A18开始写起
+    s3c2440_write_addr_byte((block_number << 6) & 0xff);         //行地址A18~A19
+    s3c2440_write_addr_byte((block_number >> 2) & 0xff);         //行地址A20~A27
+    s3c2440_write_addr_byte((block_number >> 10) & 0xff);        //行地址A28
+    s3c2440_write_cmd(CMD_ERASE2);                               //擦除命令周期2
+
+    //s3c2440_wait_ready();          //延时一段时间
     
-    /* 取消片选信号 */
-    nand_deselect_chip();
+    s3c2440_write_cmd(CMD_STATUS);          //读状态命令
+    //判断状态值的第6位是否为1，即是否在忙，该语句的作用与s3c2440_wait_ready();相同
+    do
+    {
+        stat = s3c2440_read_data8();
+    }while(!(stat&0x40));
+
+    s3c2440_nand_deselect_chip();             //关闭Nand Flash片选
+
+    //判断状态值的第0位是否为0，为0则擦除操作正确，否则错误
+    if (stat & 0x1)
+    {
+#if 0
+        temp = rNF_MarkBadBlock(page_number>>6);    //标注该块为坏块
+
+        if (temp == 0x21)
+        {
+            return 0x43            //标注坏块失败
+        }
+        else
+#endif
+        {
+            //return 0x44;           //擦除操作失败
+            temp = 1;
+        }
+    }
+    else
+    {
+        //return 0x66;                  //擦除操作成功
+        temp = 0;
+    }
+}
+
+unsigned char nand_ramdomread(unsigned int page_number, unsigned int add)
+{
+    unsigned char dat;
     
-    return ;
+    s3c2440_nand_select_chip();     //打开Nand Flash片选
+    s3c2440_clear_ready();          //清RnB信号
+
+    s3c2440_write_cmd(CMD_READ1);           //页读命令周期1
+
+    //写入5个地址周期
+    s3c2440_write_addr_byte(0x00);                      //列地址A0~A7
+    s3c2440_write_addr_byte(0x00);                      //列地址A8~A11
+    s3c2440_write_addr_byte((page_number) & 0xFF);      //行地址A12~A19
+    s3c2440_write_addr_byte((page_number >> 8) & 0xFF); //行地址A20~A27
+    s3c2440_write_addr_byte((page_number >> 16) & 0xFF);//行地址A28
+
+    s3c2440_write_cmd(CMD_READ2);          //页读命令周期2
+    s3c2440_wait_ready();                   //等待RnB信号变高，即不忙
+
+    
+    s3c2440_write_cmd(CMD_RANDOMREAD1);     //随机读命令周期1
+    //页内地址
+    s3c2440_write_addr_byte((char)(add&0xFF));              //列地址A0~A7
+    s3c2440_write_addr_byte((char)((add>>8)&0x0F));         //列地址A8~A11
+    s3c2440_write_cmd(CMD_RANDOMREAD2);                     //随机读命令周期2
+    dat = s3c2440_read_data8();             //读取数据
+
+    s3c2440_nand_deselect_chip();
+    return dat;                            
+}
+
+void nand_ramdomwrite(unsigned int page_number, unsigned int add, unsigned char dat)
+{
+    unsigned char temp,stat;
+    
+    s3c2440_nand_select_chip();     //打开Nand Flash片选
+    s3c2440_clear_ready();          //清RnB信号
+
+    s3c2440_write_cmd(CMD_WRITE1);  //页写命令周期1
+    //写入5个地址周期
+    s3c2440_write_addr_byte(0x00);                          //列地址A0~A7
+    s3c2440_write_addr_byte(0x00);                          //列地址A8~A11
+    s3c2440_write_addr_byte((page_number) & 0xFF);          //行地址A12~A19
+    s3c2440_write_addr_byte((page_number >> 8) & 0xFF);     //行地址A20~A27
+    s3c2440_write_addr_byte((page_number >> 16) & 0xFF);    //行地址A28
+    
+    s3c2440_write_cmd(CMD_RANDOMWRITE);                     //随意写命令
+    //页内地址
+    s3c2440_write_addr_byte((char)(add&0xFF));              //列地址A0~A7
+    s3c2440_write_addr_byte((char)((add>>8)&0x0F));         //列地址A8~A11
+    s3c2440_write_data8(dat);                               //写入数据
+    s3c2440_write_cmd(CMD_WRITE2);                          //页写命令周期2 
+    s3c2440_wait_ready();                                   //延时一段时间 
+
+    s3c2440_write_cmd(CMD_STATUS);      //读状态命令
+    //判断状态值的第6位是否为1，即是否在忙，该语句的作用与NF_DETECT_RB();相同
+    do
+    {
+           stat = s3c2440_read_data8();
+    }while(!(stat&0x40));
+
+    s3c2440_nand_deselect_chip();                    //关闭Nand Flash片选
+
+    //判断状态值的第0位是否为0，为0则写操作正确，否则错误
+    if (stat & 0x1)
+    {
+        temp = 1;
+        //return 0x44;                  //失败
+    }
+    else
+    {
+        temp = 0;
+        //return 0x66;                  //成功
+    }
 }
 
 int main(void)
-{
-    unsigned int buffer;
-    unsigned long nandPtr;
-    
+{    
     nand_init();
-
-    nandPtr = 0;
-    while(1)
-    {
-        nand_read(((unsigned char*)&buffer), nandPtr, 0x4);
-        nandPtr += 4;
-    }
+    nand_readid();
+    nand_eraseblock(0);
+    nand_writepage(0);
+    nand_readpage(0);
+    nand_ramdomwrite(1, 1, 0xAC);
+    nand_ramdomread(1, 1);
+    nand_readpage(1);
     
 	return 0;
 }
