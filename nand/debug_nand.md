@@ -377,7 +377,7 @@ Makefile
 	clean:
 		rm -f nand.dis nand.bin nand_elf *.o
 
-使用`arm-linux-gdb + JLinkGDBServer`在调试过程中，发现程序有复位现象。
+使用`arm-linux-gdb + JLinkGDBServer` （[如何使用arm-linux-gdb + JLinkGDBServer调试](https://github.com/tanghammer/mini2440_peripherals/blob/master/sdram/doc.md)） 在调试过程中，发现程序有复位现象。
 
 ![](https://i.imgur.com/DMU7U8y.png)
 
