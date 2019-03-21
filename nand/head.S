@@ -65,8 +65,8 @@ copy_norflash_to_sdram:
     ldr r2, =SDRAM_BASE
     mov r3, #2*1024*1024
 1:
-    ldr r4, [r1],#4     @ 从Steppingstone读取4字节的数据，并让源地址势
-    str r4, [r2],#4     @ 将此4字节的数据复制到SDRAM中，并让目地地址势
-    cmp r1, r3          @ 判断是否完成：源地址等于Steppingstone的未地址
+    ldr r4, [r1],#4     @ 从NorFlash读取4字节的数据，并让源地址自增4
+    str r4, [r2],#4     @ 将此4字节的数据复制到SDRAM中，并让目地地址自增4
+    cmp r1, r3          @ 判断是否完成：源地址等于NorFlash的未地址
     bne 1b              @ 若没
-    mov	pc,     lr		@ 返回
+    mov	pc,     lr	@ 返回
