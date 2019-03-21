@@ -1,15 +1,16 @@
 #define BUSY            1
 #define LARGER_NAND_PAGE
 
-#define NAND_SECTOR_SIZE    512
-#define NAND_BLOCK_MASK     (NAND_SECTOR_SIZE - 1)
+#define NAND_BLOCK_NUM              2048
+#define NAND_PAGE_NUM_PER_BLOCK     64
 
-#define NAND_SECTOR_SIZE_LP    2048
-#define NAND_BLOCK_MASK_LP     (NAND_SECTOR_SIZE_LP - 1)
-#define NAND_OOB_SIZE_LP       64
+#define NAND_SECTOR_SIZE_LP         2048
+#define NAND_BLOCK_MASK_LP          (NAND_SECTOR_SIZE_LP - 1)
+
+#define NAND_OOB_SIZE_LP            64
 
 /*NANDFLASH控制器基址*/
-#define S3C24X0NAND_BASE    (0x4E000000)
+#define S3C24X0NAND_BASE            (0x4E000000)
 
 
 /*命令*/
@@ -25,6 +26,14 @@
 #define CMD_RANDOMREAD1          0x05               //随意读命令周期1
 #define CMD_RANDOMREAD2          0xE0               //随意读命令周期2
 #define CMD_RANDOMWRITE          0x85               //随意写命令
+
+
+#define OC_OK        0x00
+#define OC_ERASE     0x01
+#define OC_READ      0x02
+#define OC_WRITE     0x03
+#define OC_RECLAIM   0x04
+
 
 
 /*NAND flash configuration regiser*/
@@ -522,7 +531,7 @@ void nand_readpage(unsigned int page)
 #endif
 }
 
-void nand_writepage(unsigned int  page_number)
+unsigned char nand_writepage(unsigned int  page_number)
 {
     unsigned int i, mecc0, secc;
     unsigned char stat, temp;
@@ -613,18 +622,16 @@ void nand_writepage(unsigned int  page_number)
         else
 #endif
         {
-            temp = 2;
-            //return 0x44;           //写操作失败
+            return OC_WRITE;           //写操作失败
         }
     }
     else
     {
-        temp = 0;
-        //return 0x66;                  //写操作成功
+        return OC_OK;                  //写操作成功
     }
 }
 
-void nand_eraseblock(unsigned int block_number)
+unsigned char nand_eraseblock(unsigned int block_number)
 {
     char stat, temp;
 
@@ -671,14 +678,12 @@ void nand_eraseblock(unsigned int block_number)
         else
 #endif
         {
-            //return 0x44;           //擦除操作失败
-            temp = 1;
+            return OC_ERASE;           //擦除操作失败
         }
     }
     else
     {
-        //return 0x66;                  //擦除操作成功
-        temp = 0;
+        return OC_OK;                  //擦除操作成功
     }
 }
 
@@ -759,15 +764,41 @@ void nand_ramdomwrite(unsigned int page_number, unsigned int add, unsigned char 
 }
 
 int main(void)
-{    
+{
+    int block,page,addr;
+    unsigned char data;
+    
     nand_init();
     nand_readid();
-    nand_eraseblock(0);
-    nand_writepage(0);
-    nand_readpage(0);
-    nand_ramdomwrite(1, 1, 0xAC);
-    nand_ramdomread(1, 1);
-    nand_readpage(1);
+
+#if 0
+    block = 0;
+    while ( block++ < NAND_BLOCK_NUM )
+    {
+        if ( OC_OK != nand_eraseblock(block) )
+        {
+            page = 0;
+            while( page++ < NAND_PAGE_NUM_PER_BLOCK )
+            {
+                addr = 0;
+                while ( addr++ < NAND_SECTOR_SIZE_LP + NAND_OOB_SIZE_LP )
+                {
+                    data = nand_ramdomread(page, addr);
+                    if ( data != 0xFF )
+                    {
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+#endif
+
+    //nand_writepage(0);
+    //nand_readpage(0);
+    //nand_ramdomwrite(1, 1, 0xAC);
+    //nand_ramdomread(1, 1);
+    //nand_readpage(1);
     
 	return 0;
 }
