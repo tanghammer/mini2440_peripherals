@@ -7,9 +7,9 @@
 .equ        SDRAM_BASE,         0x30000000
 
 .extern     main
+.extern     EINT_Handle
 .text 
-.global _start 
-_start:
+start:
 @******************************************************************************       
 @ 中断向量，本程序中，除Reset和HandleIRQ外，其它异常都没有使用
 @******************************************************************************       
@@ -101,17 +101,16 @@ mem_cfg_val:
     .long   0x00000030      @ MRSRB7
 
 copy_norflash_to_sdram:
-    @ 将norflash数据全部复制到SDRAM中去
-    @ Nor启动, norflas起始地址0x00000000，SDRAM中起始地址0x30000000
-    mov r1, #0
-    ldr r2, =SDRAM_BASE
-    mov r3, #128*1024
-1:
-    ldr r4, [r1],#4     @ 从NorFlash读取4字节的数据，并让源地址自增4
-    str r4, [r2],#4     @ 将此4字节的数据复制到SDRAM中，并让目地地址自增4
-    cmp r1, r3          @ 判断是否完成：源地址等于NorFlash的未地址
-    bne 1b              @ 若没
-    mov	pc,     lr      @ 返回
+        ldr   r0, =flash_sdata      @数据段在flash里面的起始地址
+        ldr   r1, =ram_sdata        @ram起始地址
+        ldr   r2, =data_size
+
+copy:
+        ldrb  r4, [r0], #1
+        strb  r4, [r1], #1
+        subs  r2, r2, #1
+        bne   copy
+        mov	pc,     lr      @ 返回
 
 HandleIRQ:
     sub lr, lr, #4                  @ 计算返回地址
