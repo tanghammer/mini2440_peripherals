@@ -5,378 +5,379 @@
 
 代码如下：
 head.S
+```asm
+@*************************************************************************
+@ File：head.S
+@ 功能：设置SDRAM，将栈设置到SDRAM，然后继续执行
+@*************************************************************************   
 
-    @*************************************************************************
-    @ File：head.S
-    @ 功能：设置SDRAM，将栈设置到SDRAM，然后继续执行
-    @*************************************************************************   
-    
-    .equMEM_CTL_BASE,   0x48000000
-    .equSDRAM_BASE, 0x30000000
-    
-    .text
-    .global _start
-    _start:
-    	b 		reset
-    	
-    reset:
-    bl  	disable_watch_dog   @ 关闭WATCHDOG，否则CPU会不断重启
-    bl  	memsetup@ 设置存储控制器
-    ldr 	sp, =0x34000000 @ 设置栈
-    bl  	main
-    halt_loop:
-    b   	halt_loop
-    
-    disable_watch_dog:
-    	@ 往WATCHDOG寄存器写0即可
-    mov 	r1, #0x53000000
-    mov 	r2, #0x0
-    str 	r2, [r1]
-    mov 	pc, lr  				@ 返回
-    
-    memsetup:
-    	@ 设置存储控制器以便使用SDRAM等外设
-    mov 	r1, #MEM_CTL_BASE   @ 存储控制器的13个寄存器的开始地址
-    adrlr2, 	mem_cfg_val @ 这13个值的起始存储地址
-    add 	r3, r1, #52 @ 13*4 = 54
-    @ 依次将内存控制单元对SDRAM初始化的参数写入至寄存器
-    str_loop:  
-    ldr 	r4, [r2], #4@ 读取设置值，并让r2加4
-    str 	r4, [r1], #4@ 将此值写入寄存器，并让r1加4
-    cmp 	r1, r3  @ 判断是否设置完所有13个寄存器
-    bne 	str_loop@ 若没有写成，继续
-    mov 	pc, lr  @ 返回
-    
-    
-    .align 4
-    mem_cfg_val:
-    @ 存储控制器13个寄存器的设置值
-    .long   0x22011110  @ BWSCON
-    .long   0x00000700  @ BANKCON0
-    .long   0x00000700  @ BANKCON1
-    .long   0x00000700  @ BANKCON2
-    .long   0x00000700  @ BANKCON3  
-    .long   0x00000700  @ BANKCON4
-    .long   0x00000700  @ BANKCON5
-    .long   0x00018005  @ BANKCON6
-    .long   0x00018005  @ BANKCON7
-    .long   0x008C07A3  @ REFRESH
-    .long   0x000000B1  @ BANKSIZE
-    .long   0x00000030  @ MRSRB6
-    .long   0x00000030  @ MRSRB7
+.equMEM_CTL_BASE,   0x48000000
+.equSDRAM_BASE, 0x30000000
+
+.text
+.global _start
+_start:
+	b 		reset
+	
+reset:
+bl  	disable_watch_dog   @ 关闭WATCHDOG，否则CPU会不断重启
+bl  	memsetup@ 设置存储控制器
+ldr 	sp, =0x34000000 @ 设置栈
+bl  	main
+halt_loop:
+b   	halt_loop
+
+disable_watch_dog:
+	@ 往WATCHDOG寄存器写0即可
+mov 	r1, #0x53000000
+mov 	r2, #0x0
+str 	r2, [r1]
+mov 	pc, lr  				@ 返回
+
+memsetup:
+	@ 设置存储控制器以便使用SDRAM等外设
+mov 	r1, #MEM_CTL_BASE   @ 存储控制器的13个寄存器的开始地址
+adrlr2, 	mem_cfg_val @ 这13个值的起始存储地址
+add 	r3, r1, #52 @ 13*4 = 54
+@ 依次将内存控制单元对SDRAM初始化的参数写入至寄存器
+str_loop:  
+ldr 	r4, [r2], #4@ 读取设置值，并让r2加4
+str 	r4, [r1], #4@ 将此值写入寄存器，并让r1加4
+cmp 	r1, r3  @ 判断是否设置完所有13个寄存器
+bne 	str_loop@ 若没有写成，继续
+mov 	pc, lr  @ 返回
+
+
+.align 4
+mem_cfg_val:
+@ 存储控制器13个寄存器的设置值
+.long   0x22011110  @ BWSCON
+.long   0x00000700  @ BANKCON0
+.long   0x00000700  @ BANKCON1
+.long   0x00000700  @ BANKCON2
+.long   0x00000700  @ BANKCON3  
+.long   0x00000700  @ BANKCON4
+.long   0x00000700  @ BANKCON5
+.long   0x00018005  @ BANKCON6
+.long   0x00018005  @ BANKCON7
+.long   0x008C07A3  @ REFRESH
+.long   0x000000B1  @ BANKSIZE
+.long   0x00000030  @ MRSRB6
+.long   0x00000030  @ MRSRB7
+```
 
 nand.c
+```c
+#define LARGER_NAND_PAGE
 
-	#define LARGER_NAND_PAGE
-	
-	#define GSTATUS1        (*(volatile unsigned int *)0x560000B0)
-	#define BUSY            1
-	
-	#define NAND_SECTOR_SIZE    512
-	#define NAND_BLOCK_MASK     (NAND_SECTOR_SIZE - 1)
-	
-	#define NAND_SECTOR_SIZE_LP    2048
-	#define NAND_BLOCK_MASK_LP     (NAND_SECTOR_SIZE_LP - 1)
-	
-	typedef unsigned int S3C24X0_REG32;
-	
-	
-	/* NAND FLASH (see S3C2410 manual chapter 6) */
-	typedef struct {
-	    S3C24X0_REG32   NFCONF;
-	    S3C24X0_REG32   NFCMD;
-	    S3C24X0_REG32   NFADDR;
-	    S3C24X0_REG32   NFDATA;
-	    S3C24X0_REG32   NFSTAT;
-	    S3C24X0_REG32   NFECC;
-	} S3C2410_NAND;
-	
-	/* NAND FLASH (see S3C2440 manual chapter 6, www.100ask.net) */
-	typedef struct {
-	    S3C24X0_REG32   NFCONF;
-	    S3C24X0_REG32   NFCONT;
-	    S3C24X0_REG32   NFCMD;
-	    S3C24X0_REG32   NFADDR;
-	    S3C24X0_REG32   NFDATA;
-	    S3C24X0_REG32   NFMECCD0;
-	    S3C24X0_REG32   NFMECCD1;
-	    S3C24X0_REG32   NFSECCD;
-	    S3C24X0_REG32   NFSTAT;
-	    S3C24X0_REG32   NFESTAT0;
-	    S3C24X0_REG32   NFESTAT1;
-	    S3C24X0_REG32   NFMECC0;
-	    S3C24X0_REG32   NFMECC1;
-	    S3C24X0_REG32   NFSECC;
-	    S3C24X0_REG32   NFSBLK;
-	    S3C24X0_REG32   NFEBLK;
-	} S3C2440_NAND;
-	
-	
-	typedef struct {
-	    void (*nand_reset)(void);
-	    void (*wait_idle)(void);
-	    void (*nand_select_chip)(void);
-	    void (*nand_deselect_chip)(void);
-	    void (*write_cmd)(int cmd);
-	    void (*write_addr)(unsigned int addr);
-	    unsigned char (*read_data)(void);
-	}t_nand_chip;
-	
-	static S3C2440_NAND * s3c2440nand = (S3C2440_NAND *)0x4e000000;
-	
-	static t_nand_chip nand_chip;
-	
-	/* 供外部调用的函数 */
-	void nand_init(void);
-	void nand_read(unsigned char *buf, unsigned long start_addr, int size);
-	
-	/* NAND Flash操作的总入口, 它们将调用S3C2440的相应函数 */
-	static void nand_reset(void);
-	static void wait_idle(void);
-	static void nand_select_chip(void);
-	static void nand_deselect_chip(void);
-	static void write_cmd(int cmd);
-	static void write_addr(unsigned int addr);
-	static unsigned char read_data(void);
-	
-	/* S3C2440的NAND Flash处理函数 */
-	static void s3c2440_nand_reset(void);
-	static void s3c2440_wait_idle(void);
-	static void s3c2440_nand_select_chip(void);
-	static void s3c2440_nand_deselect_chip(void);
-	static void s3c2440_write_cmd(int cmd);
-	static void s3c2440_write_addr(unsigned int addr);
-	static unsigned char s3c2440_read_data(void);
-	
-	/* S3C2440的NAND Flash操作函数 */
-	
-	/* 复位 */
-	static void s3c2440_nand_reset(void)
-	{
-	    s3c2440_nand_select_chip();
-	    s3c2440_write_cmd(0xff);  // 复位命令
-	    s3c2440_wait_idle();
-	    s3c2440_nand_deselect_chip();
-	}
-	
-	/* 等待NAND Flash就绪 */
-	static void s3c2440_wait_idle(void)
-	{
-	    int i;
-	    volatile unsigned char *p = (volatile unsigned char *)&s3c2440nand->NFSTAT;
-	    while(!(*p & BUSY))
-	        for(i=0; i<10; i++);
-	}
-	
-	/* 发出片选信号 */
-	static void s3c2440_nand_select_chip(void)
-	{
-	    int i;
-	    s3c2440nand->NFCONT &= ~(1<<1);
-	    for(i=0; i<10; i++);    
-	}
-	
-	/* 取消片选信号 */
-	static void s3c2440_nand_deselect_chip(void)
-	{
-	    s3c2440nand->NFCONT |= (1<<1);
-	}
-	
-	/* 发出命令 */
-	static void s3c2440_write_cmd(int cmd)
-	{
-	    volatile unsigned char *p = (volatile unsigned char *)&s3c2440nand->NFCMD;
-	    *p = cmd;
-	}
-	
-	/* 发出地址 */
-	static void s3c2440_write_addr(unsigned int addr)
-	{
-	    int i;
-	    volatile unsigned char *p = (volatile unsigned char *)&s3c2440nand->NFADDR;
-	    
-	    *p = addr & 0xff;
-	    for(i=0; i<10; i++);
-	    *p = (addr >> 9) & 0xff;
-	    for(i=0; i<10; i++);
-	    *p = (addr >> 17) & 0xff;
-	    for(i=0; i<10; i++);
-	    *p = (addr >> 25) & 0xff;
-	    for(i=0; i<10; i++);
-	}
-	
-	
-	static void s3c2440_write_addr_lp(unsigned int addr)
-	{
-		int i;
-		volatile unsigned char *p = (volatile unsigned char *)&s3c2440nand->NFADDR;
-		int col, page;
-	
-		col = addr & NAND_BLOCK_MASK_LP;
-		page = addr / NAND_SECTOR_SIZE_LP;
-		
-		*p = col & 0xff;			/* Column Address A0~A7 */
-		for(i=0; i<10; i++);		
-		*p = (col >> 8) & 0x0f; 	/* Column Address A8~A11 */
-		for(i=0; i<10; i++);
-		*p = page & 0xff;			/* Row Address A12~A19 */
-		for(i=0; i<10; i++);
-		*p = (page >> 8) & 0xff;	/* Row Address A20~A27 */
-		for(i=0; i<10; i++);
-		*p = (page >> 16) & 0x03;	/* Row Address A28~A29 */
-		for(i=0; i<10; i++);
-	}
-	
-	
-	/* 读取数据 */
-	static unsigned char s3c2440_read_data(void)
-	{
-	    volatile unsigned char *p = (volatile unsigned char *)&s3c2440nand->NFDATA;
-	    return *p;
-	}
-	
-	
-	/* 在第一次使用NAND Flash前，复位一下NAND Flash */
-	static void nand_reset(void)
-	{
-	    nand_chip.nand_reset();
-	}
-	
-	static void wait_idle(void)
-	{
-	    nand_chip.wait_idle();
-	}
-	
-	static void nand_select_chip(void)
-	{
-	    int i;
-	    nand_chip.nand_select_chip();
-	    for(i=0; i<10; i++);
-	}
-	
-	static void nand_deselect_chip(void)
-	{
-	    nand_chip.nand_deselect_chip();
-	}
-	
-	static void write_cmd(int cmd)
-	{
-	    nand_chip.write_cmd(cmd);
-	}
-	static void write_addr(unsigned int addr)
-	{
-	    nand_chip.write_addr(addr);
-	}
-	
-	static unsigned char read_data(void)
-	{
-	    return nand_chip.read_data();
-	}
-	
-	
-	/* 初始化NAND Flash */
-	void nand_init(void)
-	{
-	#define TACLS   0
-	#define TWRPH0  3
-	#define TWRPH1  0
-	
-	    nand_chip.nand_reset         = s3c2440_nand_reset;
-	    nand_chip.wait_idle          = s3c2440_wait_idle;
-	    nand_chip.nand_select_chip   = s3c2440_nand_select_chip;
-	    nand_chip.nand_deselect_chip = s3c2440_nand_deselect_chip;
-	    nand_chip.write_cmd          = s3c2440_write_cmd;
-	#ifdef LARGER_NAND_PAGE
-	    nand_chip.write_addr         = s3c2440_write_addr_lp;
-	#else
-	    nand_chip.write_addr		 = s3c2440_write_addr;
-	#endif
-	    nand_chip.read_data          = s3c2440_read_data;
-	
-	    /* 设置时序 */
-	    s3c2440nand->NFCONF = (TACLS<<12)|(TWRPH0<<8)|(TWRPH1<<4);
-	    /* 使能NAND Flash控制器, 初始化ECC, 禁止片选 */
-	    s3c2440nand->NFCONT = (1<<4)|(1<<1)|(1<<0);
-	    
-	    /* 复位NAND Flash */
-	    nand_reset();
-	}
-	
-	
-	/* 读函数 */
-	void nand_read(unsigned char *buf, unsigned long start_addr, int size)
-	{
-	    int i, j;
-	
-	#ifdef LARGER_NAND_PAGE
-	    if ((start_addr & NAND_BLOCK_MASK_LP) || (size & NAND_BLOCK_MASK_LP)) {
-	        return ;    /* 地址或长度不对齐 */
-	    }
-	#else
-	    if ((start_addr & NAND_BLOCK_MASK) || (size & NAND_BLOCK_MASK)) {
-	        return ;    /* 地址或长度不对齐 */
-	    }
-	#endif	
-	
-	    /* 选中芯片 */
-	    nand_select_chip();
-	
-	    for(i=start_addr; i < (start_addr + size);) {
-	      /* 发出READ0命令 */
-	      write_cmd(0);
-	
-	      /* Write Address */
-	      write_addr(i);
-	#ifdef LARGER_NAND_PAGE
-	      write_cmd(0x30);		
-	#endif
-	      wait_idle();
-	
-	#ifdef LARGER_NAND_PAGE
-	      for(j=0; j < NAND_SECTOR_SIZE_LP; j++, i++) {
-	#else
-		  for(j=0; j < NAND_SECTOR_SIZE; j++, i++) {
-	#endif
-	          *buf = read_data();
-	          buf++;
-	      }
-	    }
-	
-	    /* 取消片选信号 */
-	    nand_deselect_chip();
-	    
-	    return ;
-	}
-	
-	int main(void)
-	{
-	    unsigned int buffer;
-	    unsigned long nandPtr = 0x00000000;
-	    
-	    nand_init();
-	
-	    while(1)
-	    {
-	        nand_read((unsigned char *)&buffer, nandPtr, 4);
-	        nandPtr = nandPtr + 4;
-	    }
-	    return 0;
-	}
+#define GSTATUS1        (*(volatile unsigned int *)0x560000B0)
+#define BUSY            1
 
+#define NAND_SECTOR_SIZE    512
+#define NAND_BLOCK_MASK     (NAND_SECTOR_SIZE - 1)
+
+#define NAND_SECTOR_SIZE_LP    2048
+#define NAND_BLOCK_MASK_LP     (NAND_SECTOR_SIZE_LP - 1)
+
+typedef unsigned int S3C24X0_REG32;
+
+
+/* NAND FLASH (see S3C2410 manual chapter 6) */
+typedef struct {
+    S3C24X0_REG32   NFCONF;
+    S3C24X0_REG32   NFCMD;
+    S3C24X0_REG32   NFADDR;
+    S3C24X0_REG32   NFDATA;
+    S3C24X0_REG32   NFSTAT;
+    S3C24X0_REG32   NFECC;
+} S3C2410_NAND;
+
+/* NAND FLASH (see S3C2440 manual chapter 6, www.100ask.net) */
+typedef struct {
+    S3C24X0_REG32   NFCONF;
+    S3C24X0_REG32   NFCONT;
+    S3C24X0_REG32   NFCMD;
+    S3C24X0_REG32   NFADDR;
+    S3C24X0_REG32   NFDATA;
+    S3C24X0_REG32   NFMECCD0;
+    S3C24X0_REG32   NFMECCD1;
+    S3C24X0_REG32   NFSECCD;
+    S3C24X0_REG32   NFSTAT;
+    S3C24X0_REG32   NFESTAT0;
+    S3C24X0_REG32   NFESTAT1;
+    S3C24X0_REG32   NFMECC0;
+    S3C24X0_REG32   NFMECC1;
+    S3C24X0_REG32   NFSECC;
+    S3C24X0_REG32   NFSBLK;
+    S3C24X0_REG32   NFEBLK;
+} S3C2440_NAND;
+
+
+typedef struct {
+    void (*nand_reset)(void);
+    void (*wait_idle)(void);
+    void (*nand_select_chip)(void);
+    void (*nand_deselect_chip)(void);
+    void (*write_cmd)(int cmd);
+    void (*write_addr)(unsigned int addr);
+    unsigned char (*read_data)(void);
+}t_nand_chip;
+
+static S3C2440_NAND * s3c2440nand = (S3C2440_NAND *)0x4e000000;
+
+static t_nand_chip nand_chip;
+
+/* 供外部调用的函数 */
+void nand_init(void);
+void nand_read(unsigned char *buf, unsigned long start_addr, int size);
+
+/* NAND Flash操作的总入口, 它们将调用S3C2440的相应函数 */
+static void nand_reset(void);
+static void wait_idle(void);
+static void nand_select_chip(void);
+static void nand_deselect_chip(void);
+static void write_cmd(int cmd);
+static void write_addr(unsigned int addr);
+static unsigned char read_data(void);
+
+/* S3C2440的NAND Flash处理函数 */
+static void s3c2440_nand_reset(void);
+static void s3c2440_wait_idle(void);
+static void s3c2440_nand_select_chip(void);
+static void s3c2440_nand_deselect_chip(void);
+static void s3c2440_write_cmd(int cmd);
+static void s3c2440_write_addr(unsigned int addr);
+static unsigned char s3c2440_read_data(void);
+
+/* S3C2440的NAND Flash操作函数 */
+
+/* 复位 */
+static void s3c2440_nand_reset(void)
+{
+    s3c2440_nand_select_chip();
+    s3c2440_write_cmd(0xff);  // 复位命令
+    s3c2440_wait_idle();
+    s3c2440_nand_deselect_chip();
+}
+
+/* 等待NAND Flash就绪 */
+static void s3c2440_wait_idle(void)
+{
+    int i;
+    volatile unsigned char *p = (volatile unsigned char *)&s3c2440nand->NFSTAT;
+    while(!(*p & BUSY))
+        for(i=0; i<10; i++);
+}
+
+/* 发出片选信号 */
+static void s3c2440_nand_select_chip(void)
+{
+    int i;
+    s3c2440nand->NFCONT &= ~(1<<1);
+    for(i=0; i<10; i++);    
+}
+
+/* 取消片选信号 */
+static void s3c2440_nand_deselect_chip(void)
+{
+    s3c2440nand->NFCONT |= (1<<1);
+}
+
+/* 发出命令 */
+static void s3c2440_write_cmd(int cmd)
+{
+    volatile unsigned char *p = (volatile unsigned char *)&s3c2440nand->NFCMD;
+    *p = cmd;
+}
+
+/* 发出地址 */
+static void s3c2440_write_addr(unsigned int addr)
+{
+    int i;
+    volatile unsigned char *p = (volatile unsigned char *)&s3c2440nand->NFADDR;
+    
+    *p = addr & 0xff;
+    for(i=0; i<10; i++);
+    *p = (addr >> 9) & 0xff;
+    for(i=0; i<10; i++);
+    *p = (addr >> 17) & 0xff;
+    for(i=0; i<10; i++);
+    *p = (addr >> 25) & 0xff;
+    for(i=0; i<10; i++);
+}
+
+
+static void s3c2440_write_addr_lp(unsigned int addr)
+{
+	int i;
+	volatile unsigned char *p = (volatile unsigned char *)&s3c2440nand->NFADDR;
+	int col, page;
+
+	col = addr & NAND_BLOCK_MASK_LP;
+	page = addr / NAND_SECTOR_SIZE_LP;
+	
+	*p = col & 0xff;			/* Column Address A0~A7 */
+	for(i=0; i<10; i++);		
+	*p = (col >> 8) & 0x0f; 	/* Column Address A8~A11 */
+	for(i=0; i<10; i++);
+	*p = page & 0xff;			/* Row Address A12~A19 */
+	for(i=0; i<10; i++);
+	*p = (page >> 8) & 0xff;	/* Row Address A20~A27 */
+	for(i=0; i<10; i++);
+	*p = (page >> 16) & 0x03;	/* Row Address A28~A29 */
+	for(i=0; i<10; i++);
+}
+
+
+/* 读取数据 */
+static unsigned char s3c2440_read_data(void)
+{
+    volatile unsigned char *p = (volatile unsigned char *)&s3c2440nand->NFDATA;
+    return *p;
+}
+
+
+/* 在第一次使用NAND Flash前，复位一下NAND Flash */
+static void nand_reset(void)
+{
+    nand_chip.nand_reset();
+}
+
+static void wait_idle(void)
+{
+    nand_chip.wait_idle();
+}
+
+static void nand_select_chip(void)
+{
+    int i;
+    nand_chip.nand_select_chip();
+    for(i=0; i<10; i++);
+}
+
+static void nand_deselect_chip(void)
+{
+    nand_chip.nand_deselect_chip();
+}
+
+static void write_cmd(int cmd)
+{
+    nand_chip.write_cmd(cmd);
+}
+static void write_addr(unsigned int addr)
+{
+    nand_chip.write_addr(addr);
+}
+
+static unsigned char read_data(void)
+{
+    return nand_chip.read_data();
+}
+
+
+/* 初始化NAND Flash */
+void nand_init(void)
+{
+#define TACLS   0
+#define TWRPH0  3
+#define TWRPH1  0
+
+    nand_chip.nand_reset         = s3c2440_nand_reset;
+    nand_chip.wait_idle          = s3c2440_wait_idle;
+    nand_chip.nand_select_chip   = s3c2440_nand_select_chip;
+    nand_chip.nand_deselect_chip = s3c2440_nand_deselect_chip;
+    nand_chip.write_cmd          = s3c2440_write_cmd;
+#ifdef LARGER_NAND_PAGE
+    nand_chip.write_addr         = s3c2440_write_addr_lp;
+#else
+    nand_chip.write_addr		 = s3c2440_write_addr;
+#endif
+    nand_chip.read_data          = s3c2440_read_data;
+
+    /* 设置时序 */
+    s3c2440nand->NFCONF = (TACLS<<12)|(TWRPH0<<8)|(TWRPH1<<4);
+    /* 使能NAND Flash控制器, 初始化ECC, 禁止片选 */
+    s3c2440nand->NFCONT = (1<<4)|(1<<1)|(1<<0);
+    
+    /* 复位NAND Flash */
+    nand_reset();
+}
+
+
+/* 读函数 */
+void nand_read(unsigned char *buf, unsigned long start_addr, int size)
+{
+    int i, j;
+
+#ifdef LARGER_NAND_PAGE
+    if ((start_addr & NAND_BLOCK_MASK_LP) || (size & NAND_BLOCK_MASK_LP)) {
+        return ;    /* 地址或长度不对齐 */
+    }
+#else
+    if ((start_addr & NAND_BLOCK_MASK) || (size & NAND_BLOCK_MASK)) {
+        return ;    /* 地址或长度不对齐 */
+    }
+#endif	
+
+    /* 选中芯片 */
+    nand_select_chip();
+
+    for(i=start_addr; i < (start_addr + size);) {
+      /* 发出READ0命令 */
+      write_cmd(0);
+
+      /* Write Address */
+      write_addr(i);
+#ifdef LARGER_NAND_PAGE
+      write_cmd(0x30);		
+#endif
+      wait_idle();
+
+#ifdef LARGER_NAND_PAGE
+      for(j=0; j < NAND_SECTOR_SIZE_LP; j++, i++) {
+#else
+	  for(j=0; j < NAND_SECTOR_SIZE; j++, i++) {
+#endif
+          *buf = read_data();
+          buf++;
+      }
+    }
+
+    /* 取消片选信号 */
+    nand_deselect_chip();
+    
+    return ;
+}
+
+int main(void)
+{
+    unsigned int buffer;
+    unsigned long nandPtr = 0x00000000;
+    
+    nand_init();
+
+    while(1)
+    {
+        nand_read((unsigned char *)&buffer, nandPtr, 4);
+        nandPtr = nandPtr + 4;
+    }
+    return 0;
+}
+```
 Makefile
+```makefile
+CROSS_TOOLCHAIN := arm-linux
 
-	CROSS_TOOLCHAIN := arm-linux
-
-	nand.bin : head.S  nand.c
-		$(CROSS_TOOLCHAIN)-gcc -g -nostdlib -c -o head.o head.S
-		$(CROSS_TOOLCHAIN)-gcc -g -nostdlib -c -o nand.o nand.c
-		$(CROSS_TOOLCHAIN)-ld -Ttext 0x00000000 head.o nand.o -o nand_elf
-		$(CROSS_TOOLCHAIN)-objcopy -O binary -S nand_elf nand.bin
-		$(CROSS_TOOLCHAIN)-objdump -D -m arm  nand_elf > nand.dis
-		
-	clean:
-		rm -f nand.dis nand.bin nand_elf *.o
-
+nand.bin : head.S  nand.c
+	$(CROSS_TOOLCHAIN)-gcc -g -nostdlib -c -o head.o head.S
+	$(CROSS_TOOLCHAIN)-gcc -g -nostdlib -c -o nand.o nand.c
+	$(CROSS_TOOLCHAIN)-ld -Ttext 0x00000000 head.o nand.o -o nand_elf
+	$(CROSS_TOOLCHAIN)-objcopy -O binary -S nand_elf nand.bin
+	$(CROSS_TOOLCHAIN)-objdump -D -m arm  nand_elf > nand.dis
+	
+clean:
+	rm -f nand.dis nand.bin nand_elf *.o
+```
 使用`arm-linux-gdb + JLinkGDBServer` （[如何使用arm-linux-gdb + JLinkGDBServer调试](https://github.com/tanghammer/mini2440_peripherals/blob/master/sdram/doc.md)） 在调试过程中，发现程序有复位现象。
 
 ![](https://i.imgur.com/DMU7U8y.png)
@@ -556,17 +557,17 @@ CPSR寄存器显示CPU现在处于Undefined Mode。查看S3C2440数据手册
 ![](https://i.imgur.com/TctG3ty.png)
 
 这个问题困扰了我，https://blog.csdn.net/smstong/article/details/53944794， 网上查到这个资料，原来s3c2440指令集里面不包含blx指令，s3c2440的数据手册也可以看出来，它只支持bx、bl、b、bxx(条件跳转)。这就解释的清楚了，`blx r3`，是由于blx的使用导致了Undefined Mode,blx指令的翻译是由arm-linux-gcc做的，那么只要指定我目标机器的指令集是s3c2440所属的指令集就行了，s3c2440是用的ARM920T核，指令集是ARMv4T。所以Makefile修改一下，指定指令集为armv4t：
+```makefile
+CROSS_TOOLCHAIN := arm-linux
 
-	CROSS_TOOLCHAIN := arm-linux
+nand.bin : head.S  nand.c
+	$(CROSS_TOOLCHAIN)-gcc -march=armv4t -g -nostdlib -c -o head.o head.S
+	$(CROSS_TOOLCHAIN)-gcc -march=armv4t -g -nostdlib -c -o nand.o nand.c
+	$(CROSS_TOOLCHAIN)-ld -Ttext 0x30000000 head.o nand.o -o nand_elf
+	$(CROSS_TOOLCHAIN)-objcopy -O binary -S nand_elf nand.bin
+	$(CROSS_TOOLCHAIN)-objdump -D -m arm  nand_elf > nand.dis
 	
-	nand.bin : head.S  nand.c
-		$(CROSS_TOOLCHAIN)-gcc -march=armv4t -g -nostdlib -c -o head.o head.S
-		$(CROSS_TOOLCHAIN)-gcc -march=armv4t -g -nostdlib -c -o nand.o nand.c
-		$(CROSS_TOOLCHAIN)-ld -Ttext 0x30000000 head.o nand.o -o nand_elf
-		$(CROSS_TOOLCHAIN)-objcopy -O binary -S nand_elf nand.bin
-		$(CROSS_TOOLCHAIN)-objdump -D -m arm  nand_elf > nand.dis
-		
-	clean:
-		rm -f nand.dis nand.bin nand_elf *.o
-
+clean:
+	rm -f nand.dis nand.bin nand_elf *.o
+```
 再次编译，反汇编中代码段再也没有blx指令出现了，调试也正常了。单单一个nandflash的读操作就遇到了这么多问题，之前跟着网上的资料做，很多时候都帮我们避开了这些坑，或者说的时候都是一带而过。导致我们对一些知识点没有深刻的理解，所以我觉得要跟着比人做的同时，要从自己的理解角度再实现一遍。**其实这里对连接脚本，地址无关代码还需要有更深入的理解，后面再分析分析**。
