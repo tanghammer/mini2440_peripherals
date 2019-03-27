@@ -86,7 +86,7 @@ int main(void)
 {
     init_led();
     init_irq();
-    
+
     while(1);
 
     return 0;

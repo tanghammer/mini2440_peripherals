@@ -2,7 +2,7 @@ SECTIONS
 {
         . = 0x00000000;
         .text : {   
-                    head.o (.text);
+                    * (vectors);
                     * (.text);
                 }
         flash_sdata = .;
@@ -10,7 +10,7 @@ SECTIONS
         ram_sdata = .;
         .data : AT(flash_sdata) 
                 {
-                * (.data);
+                    * (.data);
                 }
         ram_edata = .;
         data_size = ram_edata - ram_sdata;

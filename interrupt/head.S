@@ -8,7 +8,9 @@
 
 .extern     main
 .extern     EINT_Handle
-.text 
+
+@ 定义一个段，存储异常向量表
+    .section "vectors"
 start:
 @******************************************************************************       
 @ 中断向量，本程序中，除Reset和HandleIRQ外，其它异常都没有使用
@@ -42,6 +44,8 @@ HandleNotUsed:
 HandleFIQ:
     b   HandleFIQ
 
+@ 代码段
+    .text 
 Reset:
     bl  	disable_watch_dog               @ 关闭WATCHDOG，否则CPU会不断重启
     bl  	memsetup                        @ 设置存储控制器
@@ -83,7 +87,7 @@ str_loop:
     mov 	pc,     lr                  @ 返回
 
 
-.align 4
+    .align 4
 mem_cfg_val:
     @ 存储控制器13个寄存器的设置值
     .long   0x22011110      @ BWSCON
@@ -101,10 +105,11 @@ mem_cfg_val:
     .long   0x00000030      @ MRSRB7
 
 copy_norflash_to_sdram:
+        ldr   r2, =data_size
+        cmp   r2, #0x0              @若数据段大小为0，则直接返回，不做拷贝动作
+        moveq pc, lr
         ldr   r0, =flash_sdata      @数据段在flash里面的起始地址
         ldr   r1, =ram_sdata        @ram起始地址
-        ldr   r2, =data_size
-
 copy:
         ldrb  r4, [r0], #1
         strb  r4, [r1], #1

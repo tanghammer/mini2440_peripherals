@@ -1,11 +1,18 @@
-CFLAGS += -g -Wall -O2 -march=armv4t -nostdlib
+CFLAGS += -g3 -Wall -march=armv4t -nostdlib
 
-int.bin:
+NAME = int
+
+$(NAME).bin:head.o main.o Makefile
+	arm-linux-ld -T int.lds head.o main.o -o $(NAME).elf
+	arm-linux-objcopy -O binary -S $(NAME).elf $@
+	arm-linux-objdump -D -m arm $(NAME).elf > $(NAME).dis
+	arm-linux-objdump -D -b binary -m arm $(NAME).bin> $(NAME).asm
+	
+head.o:head.S
 	arm-linux-gcc $(CFLAGS) -c head.S -o head.o
+
+main.o:main.c
 	arm-linux-gcc $(CFLAGS) -c main.c -o main.o
-	arm-linux-ld -T int.lds head.o main.o -o int_elf
-	arm-linux-objcopy -O binary -S int_elf $@
-	arm-linux-objdump -D -m arm int_elf > int.dis
 
 clean:
-	rm -f int.bin int_elf int.dis *.o		
+	rm -f $(NAME).bin $(NAME).elf $(NAME).dis *.o $(NAME).asm
