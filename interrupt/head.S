@@ -60,7 +60,8 @@ Reset:
     ldr sp, =0x33FFE000     @ 设置中断模式栈指针，与管理模式SP相隔8K空间
     
     msr cpsr_c, #0x5F       @ 设置I-bit=0，开IRQ中断
-    
+
+    bl      init_bss
     ldr lr, =halt_loop      @ 设置返回地址
     ldr pc, =main           @ 调用main函数
 halt_loop:
@@ -104,6 +105,7 @@ mem_cfg_val:
     .long   0x00000030      @ MRSRB6
     .long   0x00000030      @ MRSRB7
 
+@data段由flash拷贝至sdram
 copy_norflash_to_sdram:
         ldr   r2, =data_size
         cmp   r2, #0x0              @若数据段大小为0，则直接返回，不做拷贝动作
@@ -115,8 +117,21 @@ copy:
         strb  r4, [r1], #1
         subs  r2, r2, #1
         bne   copy
-        mov	pc,     lr      @ 返回
+        mov	pc,     lr              @ 返回
 
+@bss段初始化
+init_bss:
+        ldr   r0, =bss_size
+        cmp   r0, #0x0              @若bss段大小为0，则直接返回，不做初始化动作
+        moveq pc, lr
+        ldr   r1, =bss_s            @bss段在内存里面的起始地址
+        mov   r3, #0
+lp:
+        strb  r3, [r1], #1
+        subs  r0, r0, #1
+        bne   lp
+        mov	pc,     lr              @ 返回        
+        
 HandleIRQ:
     sub lr, lr, #4                  @ 计算返回地址
     stmdb   sp!,    { r0-r12,lr }   @ 保存使用到的寄存器

@@ -82,11 +82,15 @@ void EINT_Handle()
     INTPND = 1 << oft;
 }
 
+int a, b, c, d;
+int array[10] = {0,1};
+
 int main(void)
 {
     init_led();
     init_irq();
 
+    a = b = c = d = 1;
     while(1);
 
     return 0;
